@@ -3,12 +3,15 @@
 import ccxt
 from datetime import datetime
 import config_apex as config
+from logger_apex import get_logger
 
 class TraderApex:
     """Exécuteur d'ordres ultra-rapide - APEX"""
     
     def __init__(self):
         """Initialise le trader"""
+        self.logger = get_logger()
+
         try:
             if not config.DRY_RUN:
                 self.exchange = ccxt.binance({
@@ -20,19 +23,21 @@ class TraderApex:
                 self.exchange.load_markets()
             else:
                 self.exchange = None
-            
+
             # État
             self.position = None
             self.positions_history = []
             self.total_profit = 0
             self.wins = 0
             self.losses = 0
-            
+
             mode = "SIMULATION" if config.DRY_RUN else "RÉEL"
             print(f"✅ Trader APEX initialisé ({mode})")
-            
+            self.logger.info(f"Trader APEX initialisé en mode {mode}")
+
         except Exception as e:
             print(f"❌ Erreur init trader: {e}")
+            self.logger.error(f"Erreur init trader: {e}")
             self.exchange = None
     
     def buy(self, current_price, quantity, stop_loss, take_profit):
@@ -66,7 +71,9 @@ class TraderApex:
                 print(f"   Coût: ${cost:.2f}")
                 print(f"   Stop: ${stop_loss:.2f} ({((stop_loss-current_price)/current_price)*100:.2f}%)")
                 print(f"   Target: ${take_profit:.2f} ({((take_profit-current_price)/current_price)*100:+.2f}%)")
-                
+
+                self.logger.trade("BUY", current_price, quantity, "SIMULATION")
+
                 return self.position
             
             # Mode réel
@@ -140,6 +147,8 @@ class TraderApex:
                 print(f"   Prix: ${current_price:.2f}")
                 print(f"   Profit: ${net_profit:+.2f} ({profit_percent:+.2f}%)")
                 print(f"   Raison: {reason}")
+
+                self.logger.trade("SELL", current_price, quantity, f"{reason} | P&L: ${net_profit:+.2f}")
             
             # Mode réel
             else:

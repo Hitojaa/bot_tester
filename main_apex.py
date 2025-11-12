@@ -26,6 +26,7 @@ from data_collector_apex import DataCollectorApex
 from indicators_advanced import AdvancedIndicators
 from ai_apex import ApexAI
 from trader_apex import TraderApex
+from setup_interactive import run_interactive_setup
 
 class ApexPredatorBot:
     """Le Bot de Scalping PRO Ultime"""
@@ -163,7 +164,16 @@ class ApexPredatorBot:
                 if not self.is_observation_complete():
                     remaining = config.MIN_OBSERVATION_TIME - (datetime.now() - self.observation_start).total_seconds()
                     print(f"\n⏳ Phase d'observation: {remaining/60:.1f} minutes restantes")
-                    return
+
+                    # EMERGENCY BUY : Si opportunité EXCEPTIONNELLE, trade quand même !
+                    apex_score = analysis['apex_score']['total_score']
+                    if apex_score >= 92 and analysis['decision']['action'] == 'buy':
+                        print(f"\n🚨 OPPORTUNITÉ EXCEPTIONNELLE DÉTECTÉE!")
+                        print(f"   APEX Score: {apex_score:.1f}/100 (>92)")
+                        print(f"   🔥 EMERGENCY BUY activé - Phase d'observation ignorée!")
+                        self.can_trade = True  # Active temporairement
+                    else:
+                        return
                 else:
                     self.can_trade = True
                     print("\n✅ PHASE D'OBSERVATION TERMINÉE!")
@@ -290,15 +300,38 @@ class ApexPredatorBot:
                 print(f"\n❌ R/R ratio insuffisant (min: {config.MIN_RISK_REWARD_RATIO}:1)")
                 return
             
-            # Calcule la taille de position
+            # 🆕 Calcule la taille de position ADAPTATIVE (selon APEX Score)
             capital = config.INITIAL_CAPITAL + self.trader.total_profit
-            position_size = capital * config.DEFAULT_POSITION_SIZE
+            base_position_size = capital * config.DEFAULT_POSITION_SIZE
+
+            # Ajuste la taille selon le score APEX
+            if config.ADAPTIVE_POSITION_SIZING:
+                if apex_score >= config.IDEAL_APEX_SCORE:
+                    # Score excellent (88+) → Grande position (130%)
+                    multiplier = config.LARGE_POSITION_MULTIPLIER
+                    size_label = "GRANDE"
+                elif apex_score >= config.GOOD_APEX_SCORE:
+                    # Bon score (78-88) → Position moyenne (100%)
+                    multiplier = config.MEDIUM_POSITION_MULTIPLIER
+                    size_label = "MOYENNE"
+                else:
+                    # Score acceptable (70-78) → Petite position (60%)
+                    multiplier = config.SMALL_POSITION_MULTIPLIER
+                    size_label = "PETITE"
+
+                position_size = base_position_size * multiplier
+            else:
+                position_size = base_position_size
+                size_label = "STANDARD"
+
             quantity = position_size / current_price
-            
-            print(f"\n💰 POSITION:")
+
+            print(f"\n💰 POSITION ({size_label}):")
             print(f"   Capital disponible: ${capital:.2f}")
-            print(f"   Taille position: ${position_size:.2f} ({config.DEFAULT_POSITION_SIZE*100:.0f}%)")
+            print(f"   Taille position: ${position_size:.2f} ({(position_size/capital)*100:.0f}%)")
             print(f"   Quantité: {quantity:.6f} {config.SYMBOL.split('/')[0]}")
+            if config.ADAPTIVE_POSITION_SIZING:
+                print(f"   📊 Sizing adaptatif: x{multiplier:.1f} (APEX: {apex_score:.1f})")
             
             # Confirmation (en mode non-verbose)
             if not config.DRY_RUN:
@@ -462,13 +495,22 @@ class ApexPredatorBot:
 def main():
     """Point d'entrée principal"""
     try:
+        # Lance le setup interactif
+        print("🔧 Configuration du bot...")
+        user_wants_interactive = input("\nUtiliser la configuration interactive? (y/n, défaut: y): ").strip().lower()
+
+        if user_wants_interactive != 'n' and user_wants_interactive != 'non':
+            run_interactive_setup()
+        else:
+            print("✅ Utilisation de la configuration par défaut")
+
         # Crée et démarre le bot
         bot = ApexPredatorBot()
         bot.start()
-    
+
     except KeyboardInterrupt:
         print("\n\n👋 Au revoir!")
-    
+
     except Exception as e:
         print(f"\n\n❌ Erreur fatale: {e}")
         import traceback
