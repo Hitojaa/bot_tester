@@ -210,11 +210,19 @@ class ApexAI:
         """
         Calcule le APEX SCORE final (0-100)
         Combine les 3 layers avec pondération
+
+        ⚡ NOUVELLE PONDÉRATION V2.0 (plus réactive) :
+        - Micro (patterns, timing) : 40% (↑ de 30%)
+        - Méso (zones clés) : 35% (↓ de 40%)
+        - Macro (contexte) : 25% (↓ de 30%)
+
+        Rationale: Scalping 1m nécessite plus de réactivité aux signaux
+        immédiats (patterns, momentum) qu'au contexte long terme.
         """
-        # Pondération des layers
-        macro_weight = 0.30   # 30% - Contexte
-        meso_weight = 0.40    # 40% - Zones clés
-        micro_weight = 0.30   # 30% - Exécution
+        # Pondération des layers (V2.0 - Plus réactive)
+        macro_weight = 0.25   # 25% - Contexte (réduit)
+        meso_weight = 0.35    # 35% - Zones clés (réduit)
+        micro_weight = 0.40   # 40% - Exécution (augmenté !)
         
         # Scores pondérés
         weighted_macro = macro['score'] * macro_weight
@@ -229,17 +237,31 @@ class ApexAI:
         # 0 = 50 (neutre)
         # +100 = 100 (très haussier)
         apex_score = (raw_score + 100) / 2
-        
+
+        # 🆕 BOOST VOLUME : Si volume confirme le signal (+10 points max)
+        volume_boost = 0
+        if micro.get('volume_spike', 1.0) > 1.5:  # Volume > 150% de la moyenne
+            volume_boost = min((micro['volume_spike'] - 1.0) * 10, 10)
+            apex_score += volume_boost
+            apex_score = min(apex_score, 100)  # Plafonné à 100
+
+        # 🆕 AJUSTEMENT VOLATILITÉ : Score bonus/malus selon régime
+        volatility_adjustment = macro.get('volatility', {}).get('adjustment', 0)
+        apex_score += volatility_adjustment
+        apex_score = min(max(apex_score, 0), 100)  # Borné entre 0 et 100
+
         # Ajustement selon la précision historique
         confidence_factor = 0.5 + (self.accuracy_rate * 0.5)
         apex_score *= confidence_factor
-        
+
         return {
             'total_score': min(max(apex_score, 0), 100),
             'raw_score': raw_score,
             'macro_contribution': weighted_macro,
             'meso_contribution': weighted_meso,
             'micro_contribution': weighted_micro,
+            'volume_boost': volume_boost,
+            'volatility_adjustment': volatility_adjustment,
             'confidence_factor': confidence_factor
         }
     
@@ -348,33 +370,54 @@ class ApexAI:
         }
     
     def _analyze_volatility(self, df):
-        """Analyse la volatilité"""
+        """
+        Analyse la volatilité avec adaptativité
+
+        🆕 V2.0: Ajuste les attentes selon la volatilité
+        - Haute volatilité: Être plus tolérant (signaux moins stricts)
+        - Basse volatilité: Être plus exigeant (faux signaux fréquents)
+        """
         if 'atr' not in df.columns:
-            return {'level': 'unknown', 'score': 0}
-        
+            return {'level': 'unknown', 'score': 0, 'ratio': 1.0, 'adjustment': 0}
+
         recent_atr = df['atr'].tail(20)
         current_atr = recent_atr.iloc[-1]
         avg_atr = recent_atr.mean()
-        
+
         volatility_ratio = current_atr / avg_atr
-        
+
+        # 🆕 Ajustement adaptatif du score selon volatilité
         if volatility_ratio > 1.5:
+            # Très haute volatilité: +5 points (opportunités rapides)
             level = 'very_high'
-            score = -20  # Pénalité
+            score = 5  # Bonus (mouvement rapide = opportunité)
+            adjustment = +5
         elif volatility_ratio > 1.2:
+            # Haute volatilité: +3 points
             level = 'high'
-            score = -10
-        elif volatility_ratio < 0.8:
+            score = 3
+            adjustment = +3
+        elif volatility_ratio < 0.7:
+            # Très basse volatilité: -10 points (marché mort)
+            level = 'very_low'
+            score = -10  # Pénalité (faux signaux)
+            adjustment = -10
+        elif volatility_ratio < 0.9:
+            # Basse volatilité: -5 points
             level = 'low'
-            score = 10  # Bonus (calme)
+            score = -5
+            adjustment = -5
         else:
+            # Volatilité normale: neutre
             level = 'normal'
             score = 0
-        
+            adjustment = 0
+
         return {
             'level': level,
             'ratio': volatility_ratio,
-            'score': score
+            'score': score,
+            'adjustment': adjustment  # Utilisé pour ajuster MIN_APEX_SCORE dynamiquement
         }
     
     def update_accuracy(self, prediction_correct):

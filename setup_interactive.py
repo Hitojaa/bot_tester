@@ -90,25 +90,30 @@ def get_profile():
     print("-" * 40)
 
     profiles_info = {
+        'dynamic': {
+            'emoji': '🤖',
+            'desc': 'Dynamic (NOUVEAU V2.0)',
+            'detail': '🆕 Position 16%, Stop 0.9%, Score min 70, Max 60 trades/jour - Adaptatif & Intelligent'
+        },
         'ultra_aggressive': {
             'emoji': '🔥',
             'desc': 'Ultra Agressif',
-            'detail': 'Position 25%, Stop 0.6%, Score min 80, Max 80 trades/jour'
+            'detail': 'Position 25%, Stop 0.6%, Score min 75, Max 80 trades/jour'
         },
         'aggressive': {
             'emoji': '⚡',
             'desc': 'Agressif',
-            'detail': 'Position 18%, Stop 0.8%, Score min 85, Max 50 trades/jour'
+            'detail': 'Position 18%, Stop 0.8%, Score min 78, Max 50 trades/jour'
         },
         'balanced': {
             'emoji': '⚖️',
             'desc': 'Équilibré',
-            'detail': 'Position 15%, Stop 1.0%, Score min 88, Max 30 trades/jour'
+            'detail': 'Position 15%, Stop 1.0%, Score min 82, Max 30 trades/jour'
         },
         'conservative': {
             'emoji': '🛡️',
             'desc': 'Conservateur',
-            'detail': 'Position 10%, Stop 1.2%, Score min 92, Max 20 trades/jour'
+            'detail': 'Position 10%, Stop 1.2%, Score min 88, Max 20 trades/jour'
         }
     }
 
@@ -122,14 +127,14 @@ def get_profile():
 
     while True:
         try:
-            choice = input(f"\nChoix (1-4, défaut: 2): ").strip()
+            choice = input(f"\nChoix (1-5, défaut: 1 Dynamic): ").strip()
 
             if choice == "":
-                return config.ACTIVE_PROFILE
+                return config.ACTIVE_PROFILE  # Dynamic par défaut
 
             choice_num = int(choice)
 
-            if 1 <= choice_num <= 4:
+            if 1 <= choice_num <= 5:
                 return profile_list[choice_num - 1]
 
             else:
