@@ -1,0 +1,15 @@
+# APEX PREDATOR BOT - Dépendances Python
+
+# Exchange API
+ccxt>=4.0.0
+
+# Data manipulation
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Technical indicators (optionnel, déjà codé manuellement)
+ta>=0.11.0
+
+# Autres
+python-dateutil>=2.8.0
+requests>=2.31.0
