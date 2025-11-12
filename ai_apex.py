@@ -33,41 +33,47 @@ class ApexAI:
     def analyze_complete(self, df):
         """
         Analyse COMPLÈTE multi-layer
-        
+
         Returns:
             dict: Analyse ultra-détaillée + APEX Score
         """
         if df is None or len(df) < 100:
             return None
-        
+
         current_price = df.iloc[-1]['close']
         prev_price = df.iloc[-2]['close']
-        
+
         # LAYER 1 : MACRO (Long terme - Contexte)
         macro_analysis = self._analyze_macro(df)
-        
+
         # LAYER 2 : MÉSO (Moyen terme - Zones)
         meso_analysis = self._analyze_meso(df, current_price, prev_price)
-        
+
         # LAYER 3 : MICRO (Court terme - Exécution)
         micro_analysis = self._analyze_micro(df, current_price, prev_price)
-        
-        # Calcule le APEX SCORE final
+
+        # 🆕 V2.1: DÉTECTION POWER SIGNALS (signaux ultra-forts)
+        power_signals = self._detect_power_signals(df, current_price, prev_price,
+                                                     macro_analysis, meso_analysis, micro_analysis)
+
+        # Calcule le APEX SCORE final (avec power signals)
         apex_score = self._calculate_apex_score(
             macro_analysis,
             meso_analysis,
-            micro_analysis
+            micro_analysis,
+            power_signals
         )
-        
+
         # Décision finale
         decision = self._make_decision(apex_score)
-        
+
         return {
             'apex_score': apex_score,
             'decision': decision,
             'macro': macro_analysis,
             'meso': meso_analysis,
             'micro': micro_analysis,
+            'power_signals': power_signals,
             'market_regime': self.market_regime,
             'confidence': apex_score['total_score']
         }
@@ -206,23 +212,100 @@ class ApexAI:
             'reasons': reasons
         }
     
-    def _calculate_apex_score(self, macro, meso, micro):
+    def _detect_power_signals(self, df, current_price, prev_price, macro, meso, micro):
+        """
+        🔥 POWER SIGNALS - Détecte les signaux ULTRA-FORTS qui justifient un trade immédiat
+
+        Ces signaux "overrident" partiellement les autres layers quand ils sont présents.
+        En scalping 1m, un RSI à 20 + Order Flow à 95% = ACHAT, peu importe la tendance 4h !
+
+        Returns:
+            dict: Signaux détectés + boost à appliquer
+        """
+        signals_detected = []
+        total_boost = 0
+
+        last_candle = df.iloc[-1]
+
+        # 1. RSI EXTRÊME (survente/surachat sévère)
+        if 'rsi' in last_candle:
+            rsi = last_candle['rsi']
+            if rsi < 25:  # Survente EXTRÊME
+                signals_detected.append(f"RSI Extrême Survente ({rsi:.1f})")
+                total_boost += 25  # +25 points !
+            elif rsi > 75:  # Surachat EXTRÊME
+                signals_detected.append(f"RSI Extrême Surachat ({rsi:.1f})")
+                total_boost -= 15  # Pénalité pour surachat
+
+        # 2. VOLUME SPIKE MASSIF (> 2x la moyenne)
+        volume_spike = micro.get('volume_spike', 1.0)
+        if volume_spike > 2.0:
+            signals_detected.append(f"Volume Spike Massif ({volume_spike:.1f}x)")
+            total_boost += 15
+
+        # 3. PATTERNS FORTS (3 soldiers, engulfing, hammer, etc.)
+        patterns = micro.get('patterns', [])
+        strong_bullish_patterns = [p for p in patterns
+                                    if p['type'] == 'bullish' and p['reliability'] >= 70]
+        if len(strong_bullish_patterns) >= 2:
+            signals_detected.append(f"{len(strong_bullish_patterns)} Patterns Haussiers Forts")
+            total_boost += 20
+
+        # 4. MOMENTUM CONVERGENCE (RSI + MACD + Stoch alignés)
+        momentum_signals = 0
+        if 'rsi' in last_candle and last_candle['rsi'] < 35:
+            momentum_signals += 1
+        if 'macd' in last_candle and 'macd_signal' in last_candle:
+            if last_candle['macd'] > last_candle['macd_signal']:
+                momentum_signals += 1
+        if 'stoch_k' in last_candle and last_candle['stoch_k'] < 30:
+            momentum_signals += 1
+
+        if momentum_signals >= 2:
+            signals_detected.append(f"Convergence Momentum ({momentum_signals}/3 signaux)")
+            total_boost += 18
+
+        # 5. SUPERTREND + PRICE ACTION
+        if 'supertrend' in last_candle and last_candle['supertrend'] > 0:  # Signal achat
+            if current_price > prev_price:  # Prix en hausse
+                signals_detected.append("SuperTrend BUY + Prix Hausse")
+                total_boost += 12
+
+        # 6. BOLLINGER BANDS EXTREMES
+        if 'bb_lower' in last_candle and 'bb_upper' in last_candle:
+            bb_position = (current_price - last_candle['bb_lower']) / (last_candle['bb_upper'] - last_candle['bb_lower'])
+            if bb_position < 0.1:  # Prix très proche de la bande basse
+                signals_detected.append("Prix à la Bollinger Basse (rebond potentiel)")
+                total_boost += 15
+
+        # Plafonne le boost total
+        total_boost = min(total_boost, 50)  # Max +50 points
+
+        return {
+            'signals': signals_detected,
+            'count': len(signals_detected),
+            'total_boost': total_boost,
+            'active': len(signals_detected) >= 2  # Activé si 2+ signaux
+        }
+
+    def _calculate_apex_score(self, macro, meso, micro, power_signals=None):
         """
         Calcule le APEX SCORE final (0-100)
         Combine les 3 layers avec pondération
 
-        ⚡ NOUVELLE PONDÉRATION V2.0 (plus réactive) :
-        - Micro (patterns, timing) : 40% (↑ de 30%)
-        - Méso (zones clés) : 35% (↓ de 40%)
-        - Macro (contexte) : 25% (↓ de 30%)
+        ⚡ NOUVELLE PONDÉRATION V2.1 (ULTRA réactive) :
+        - Micro (patterns, timing) : 50% (↑ de 40%)
+        - Méso (zones clés) : 35% (stable)
+        - Macro (contexte) : 15% (↓ de 25%)
+        + POWER SIGNALS : +50 points max si 2+ signaux forts détectés
 
-        Rationale: Scalping 1m nécessite plus de réactivité aux signaux
-        immédiats (patterns, momentum) qu'au contexte long terme.
+        Rationale: En scalping 1m, un RSI à 20 + gros volume = ACHAT,
+        peu importe la tendance 4h ! Le timing immédiat prime sur tout.
         """
-        # Pondération des layers (V2.0 - Plus réactive)
-        macro_weight = 0.25   # 25% - Contexte (réduit)
-        meso_weight = 0.35    # 35% - Zones clés (réduit)
-        micro_weight = 0.40   # 40% - Exécution (augmenté !)
+        # Pondération des layers (V2.1 - ULTRA réactive)
+        macro_weight = 0.15   # 15% - Contexte (encore réduit !)
+        meso_weight = 0.35    # 35% - Zones clés (stable)
+        micro_weight = 0.50   # 50% - Exécution (augmenté !)
         
         # Scores pondérés
         weighted_macro = macro['score'] * macro_weight
@@ -250,6 +333,13 @@ class ApexAI:
         apex_score += volatility_adjustment
         apex_score = min(max(apex_score, 0), 100)  # Borné entre 0 et 100
 
+        # 🔥 POWER SIGNALS BOOST : Si 2+ signaux ultra-forts détectés
+        power_boost = 0
+        if power_signals and power_signals.get('active', False):
+            power_boost = power_signals.get('total_boost', 0)
+            apex_score += power_boost
+            apex_score = min(apex_score, 100)  # Plafonné à 100
+
         # Ajustement selon la précision historique
         confidence_factor = 0.5 + (self.accuracy_rate * 0.5)
         apex_score *= confidence_factor
@@ -262,6 +352,8 @@ class ApexAI:
             'micro_contribution': weighted_micro,
             'volume_boost': volume_boost,
             'volatility_adjustment': volatility_adjustment,
+            'power_boost': power_boost,
+            'power_signals_count': power_signals.get('count', 0) if power_signals else 0,
             'confidence_factor': confidence_factor
         }
     
@@ -457,7 +549,15 @@ class ApexAI:
         print(f"   Macro (contexte):  {apex['macro_contribution']:+.1f}")
         print(f"   Méso (zones):      {apex['meso_contribution']:+.1f}")
         print(f"   Micro (exécution): {apex['micro_contribution']:+.1f}")
-        
+
+        # 🔥 POWER SIGNALS (si actifs)
+        power_signals = analysis.get('power_signals', {})
+        if power_signals.get('active', False):
+            print(f"\n🔥 POWER SIGNALS ACTIFS ({power_signals.get('count', 0)} détectés):")
+            for signal in power_signals.get('signals', []):
+                print(f"   ⚡ {signal}")
+            print(f"   💥 Boost total: +{apex.get('power_boost', 0):.0f} points")
+
         # DÉCISION
         decision = analysis['decision']
         action_emoji = "🟢" if decision['action'] == 'buy' else "🔴" if decision['action'] == 'sell' else "⚪"

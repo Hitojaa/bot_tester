@@ -60,20 +60,20 @@ TRAILING_STOP_ACTIVATION = 0.012  # Active à +1.2%
 TRAILING_STOP_DISTANCE = 0.008    # Distance 0.8%
 
 # ═══════════════════════════════════════════════════════════
-# 🧠 APEX SCORE - Seuils d'entrée (V2.0 - Plus réactif)
+# 🧠 APEX SCORE - Seuils d'entrée (V2.1 - ULTRA réactif)
 # ═══════════════════════════════════════════════════════════
 
-# 🆕 Seuils abaissés pour plus d'opportunités
-MIN_APEX_SCORE = 70        # Score minimum pour entrer (abaissé de 72)
-GOOD_APEX_SCORE = 78       # Bon score (position moyenne)
-IDEAL_APEX_SCORE = 88      # Score idéal (position grande)
-MIN_CONFIDENCE = 60        # Confiance IA minimum (abaissé de 65)
+# 🔥 Seuils encore abaissés + système POWER SIGNALS
+MIN_APEX_SCORE = 65        # Score minimum pour entrer (abaissé de 70)
+GOOD_APEX_SCORE = 75       # Bon score (position moyenne)
+IDEAL_APEX_SCORE = 85      # Score idéal (position grande)
+MIN_CONFIDENCE = 55        # Confiance IA minimum (abaissé de 60)
 
 # 🆕 Position Sizing Adaptatif (selon APEX Score)
 ADAPTIVE_POSITION_SIZING = True  # Active le sizing adaptatif
-SMALL_POSITION_MULTIPLIER = 0.6  # 60% de la taille normale si score 70-78
-MEDIUM_POSITION_MULTIPLIER = 1.0 # 100% de la taille normale si score 78-88
-LARGE_POSITION_MULTIPLIER = 1.3  # 130% de la taille normale si score 88+
+SMALL_POSITION_MULTIPLIER = 0.6  # 60% de la taille normale si score 65-75
+MEDIUM_POSITION_MULTIPLIER = 1.0 # 100% de la taille normale si score 75-85
+LARGE_POSITION_MULTIPLIER = 1.3  # 130% de la taille normale si score 85+
 
 # ═══════════════════════════════════════════════════════════
 # 📊 INDICATEURS TECHNIQUES PRO
@@ -213,47 +213,47 @@ STATS_DISPLAY_FREQUENCY = 10    # Affiche stats toutes les 10 itérations
 PROFILES = {
     'dynamic': {
         'position_size': 0.16,
-        'min_apex_score': 70,  # Seuil bas
+        'min_apex_score': 65,  # 🔥 Seuil TRÈS bas avec Power Signals
         'stop_loss': 0.009,
         'take_profit': 0.028,
         'max_daily_trades': 60,
-        'description': '🤖 NOUVEAU ! Adaptatif & Intelligent - Recommandé V2.0'
+        'description': '🤖 V2.1 ! Power Signals + Ultra Réactif - Recommandé'
     },
     'ultra_aggressive': {
         'position_size': 0.25,
-        'min_apex_score': 75,  # Abaissé de 80
+        'min_apex_score': 68,  # Abaissé de 75
         'stop_loss': 0.006,
         'take_profit': 0.020,
         'max_daily_trades': 80,
-        'description': '🔥 Maximum de trades, risque élevé'
+        'description': '🔥 Maximum de trades, très agressif'
     },
     'aggressive': {
         'position_size': 0.18,
-        'min_apex_score': 78,  # Abaissé de 85
+        'min_apex_score': 72,  # Abaissé de 78
         'stop_loss': 0.008,
         'take_profit': 0.025,
         'max_daily_trades': 50,
-        'description': '⚡ Equilibre risque/opportunités'
+        'description': '⚡ Bon équilibre opportunités/risque'
     },
     'balanced': {
         'position_size': 0.15,
-        'min_apex_score': 82,  # Abaissé de 88
+        'min_apex_score': 78,  # Abaissé de 82
         'stop_loss': 0.010,
         'take_profit': 0.030,
         'max_daily_trades': 30,
-        'description': '⚖️ Bon compromis sécurité/gains'
+        'description': '⚖️ Compromis sécurité/gains'
     },
     'conservative': {
         'position_size': 0.10,
-        'min_apex_score': 88,  # Abaissé de 92
+        'min_apex_score': 82,  # Abaissé de 88
         'stop_loss': 0.012,
         'take_profit': 0.035,
         'max_daily_trades': 20,
-        'description': '🛡️ Sécurité maximale, moins de trades'
+        'description': '🛡️ Sécurité maximale'
     }
 }
 
-# Profil actif par défaut (V2.0: Dynamic recommandé !)
+# Profil actif par défaut (V2.1: Dynamic avec Power Signals !)
 ACTIVE_PROFILE = 'dynamic'
 
 # ═══════════════════════════════════════════════════════════
