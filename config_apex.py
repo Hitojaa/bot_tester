@@ -166,6 +166,40 @@ MIN_OBSERVATION_TIME = 1800       # 30 minutes (en secondes)
 MIN_CANDLES_BEFORE_TRADE = 100    # 100 bougies minimum avant trade
 
 # ═══════════════════════════════════════════════════════════
+# 🔥 SORTIES DYNAMIQUES INTELLIGENTES (V2.2 - NOUVEAU!)
+# ═══════════════════════════════════════════════════════════
+
+# Activation du système
+DYNAMIC_EXITS_ENABLED = True      # Active les sorties dynamiques
+
+# 1. DÉTÉRIORATION DES CONDITIONS (sortie anticipée)
+EXIT_ON_DETERIORATION = True
+EXIT_STOCH_OVERBOUGHT = 90        # Stochastique en surachat
+EXIT_STOCH_DURATION = 3           # Pendant X bougies consécutives
+EXIT_ORDER_FLOW_NEGATIVE = -60    # Order Flow devient négatif (%)
+EXIT_APEX_CRITICAL = 45           # APEX tombe sous ce seuil = critique
+EXIT_APEX_STAGNANT = 50           # APEX stagne sous ce seuil
+
+# 2. PERTE DE MOMENTUM (sortie immédiate)
+EXIT_ON_MOMENTUM_LOSS = True
+EXIT_PRICE_UNDER_EMA = True       # Prix repasse sous EMA9
+EXIT_MACD_BEARISH = True          # MACD devient négatif/neutre
+
+# 3. DÉGRADATION DU SCORE APEX
+EXIT_ON_APEX_DROP = True
+EXIT_APEX_DROP_THRESHOLD = -15    # Si APEX baisse de 15+ points vs entrée
+EXIT_REGIME_CHANGE = True         # Si régime passe en range/baissier
+
+# 4. TAKE-PROFIT PROGRESSIF (sortie partielle)
+PROGRESSIVE_EXITS_ENABLED = True
+PARTIAL_EXIT_1_PROFIT = 0.005     # +0.5% → ferme 30%
+PARTIAL_EXIT_2_PROFIT = 0.010     # +1.0% → ferme 30% supplémentaires
+BREAKEVEN_AFTER_PARTIAL = True    # Stop à breakeven après sortie partielle
+
+# Seuil minimum de profit pour sortie anticipée (protège les petits gains)
+MIN_PROFIT_FOR_EARLY_EXIT = 0.003  # +0.3% minimum avant sortie anticipée
+
+# ═══════════════════════════════════════════════════════════
 # 🔍 DÉTECTION DE MARCHÉ
 # ═══════════════════════════════════════════════════════════
 

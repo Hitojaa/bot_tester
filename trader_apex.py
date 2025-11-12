@@ -40,10 +40,13 @@ class TraderApex:
             self.logger.error(f"Erreur init trader: {e}")
             self.exchange = None
     
-    def buy(self, current_price, quantity, stop_loss, take_profit):
+    def buy(self, current_price, quantity, stop_loss, take_profit, apex_score=None):
         """
         Exécute un ordre d'ACHAT
-        
+
+        Args:
+            apex_score: Score APEX à l'entrée (pour sorties dynamiques)
+
         Returns:
             dict: Détails de la position
         """
@@ -60,6 +63,7 @@ class TraderApex:
                     'stop_loss': stop_loss,
                     'take_profit': take_profit,
                     'entry_time': datetime.now(),
+                    'entry_apex_score': apex_score,
                     'targets_hit': [],
                     'mode': 'simulation'
                 }
@@ -89,6 +93,7 @@ class TraderApex:
                     'stop_loss': stop_loss,
                     'take_profit': take_profit,
                     'entry_time': datetime.now(),
+                    'entry_apex_score': apex_score,
                     'order_id': order['id'],
                     'targets_hit': [],
                     'mode': 'real'
@@ -178,7 +183,100 @@ class TraderApex:
         except Exception as e:
             print(f"❌ Erreur vente: {e}")
             return None
-    
+
+    def sell_partial(self, current_price, percent, reason=""):
+        """
+        Exécute une vente PARTIELLE (ferme X% de la position)
+
+        Args:
+            current_price: Prix actuel
+            percent: Pourcentage à fermer (0-1, ex: 0.3 = 30%)
+            reason: Raison de la sortie partielle
+
+        Returns:
+            dict: Résultat du trade partiel
+        """
+        if self.position is None:
+            print("⚠️  Aucune position à fermer")
+            return None
+
+        if percent <= 0 or percent >= 1:
+            print(f"⚠️  Pourcentage invalide: {percent*100:.0f}%")
+            return None
+
+        try:
+            entry_price = self.position['entry_price']
+            quantity_to_sell = self.position['quantity'] * percent
+            remaining_quantity = self.position['quantity'] * (1 - percent)
+
+            # Calcule profit sur la partie vendue
+            profit_percent = ((current_price - entry_price) / entry_price) * 100
+            profit_usdt = (current_price - entry_price) * quantity_to_sell
+
+            # Frais
+            fees = (entry_price * quantity_to_sell + current_price * quantity_to_sell) * config.BINANCE_FEE
+            net_profit = profit_usdt - fees
+
+            trade_result = {
+                'entry_price': entry_price,
+                'exit_price': current_price,
+                'quantity': quantity_to_sell,
+                'profit_percent': profit_percent,
+                'profit_usdt': net_profit,
+                'entry_time': self.position['entry_time'],
+                'exit_time': datetime.now(),
+                'duration': datetime.now() - self.position['entry_time'],
+                'reason': f"SORTIE PARTIELLE ({percent*100:.0f}%) - {reason}",
+                'partial': True
+            }
+
+            # Mode simulation
+            if config.DRY_RUN or self.position.get('mode') == 'simulation':
+                print(f"\n🟡 VENTE PARTIELLE SIMULÉE ({percent*100:.0f}%)")
+                print(f"   Prix: ${current_price:.2f}")
+                print(f"   Quantité vendue: {quantity_to_sell:.6f} {config.SYMBOL.split('/')[0]}")
+                print(f"   Quantité restante: {remaining_quantity:.6f} {config.SYMBOL.split('/')[0]}")
+                print(f"   Profit sur partie vendue: ${net_profit:+.2f} ({profit_percent:+.2f}%)")
+                print(f"   Raison: {reason}")
+
+                self.logger.trade("SELL_PARTIAL", current_price, quantity_to_sell, f"{reason} | P&L: ${net_profit:+.2f}")
+
+            # Mode réel
+            else:
+                order = self.exchange.create_market_sell_order(
+                    config.SYMBOL,
+                    quantity_to_sell
+                )
+
+                print(f"\n🟡 VENTE PARTIELLE RÉELLE ({percent*100:.0f}%)")
+                print(f"   Order ID: {order['id']}")
+                print(f"   Prix: ${order['price']:.2f}")
+                print(f"   Profit net: ${net_profit:+.2f}")
+
+            # Met à jour la position avec la quantité restante
+            self.position['quantity'] = remaining_quantity
+
+            # Ajuste le stop si demandé (breakeven après sortie partielle)
+            if config.BREAKEVEN_AFTER_PARTIAL and net_profit > 0:
+                self.position['stop_loss'] = entry_price
+                print(f"   🛡️  Stop ajusté au breakeven: ${entry_price:.2f}")
+
+            # Stats partielles (on compte comme demi-trade)
+            self.total_profit += net_profit
+            if net_profit > 0:
+                self.wins += 0.5
+            else:
+                self.losses += 0.5
+
+            # Historique
+            self.positions_history.append(trade_result)
+
+            return trade_result
+
+        except Exception as e:
+            print(f"❌ Erreur vente partielle: {e}")
+            return None
+
     def check_multi_target_exit(self, current_price):
         """
         Vérifie les sorties multi-targets
