@@ -207,21 +207,21 @@ class SupportResistanceDetector:
             signal['action'] = 'buy'
             signal['score'] = 30
             signal['reason'] = f"Rebond sur support (${signal['nearest_support']:.2f})"
-        
+
         # Signal d'achat : Cassure de résistance
-        elif prev_price < signal['nearest_resistance'] and current_price >= signal['nearest_resistance']:
+        elif signal['nearest_resistance'] is not None and prev_price < signal['nearest_resistance'] and current_price >= signal['nearest_resistance']:
             signal['action'] = 'buy'
             signal['score'] = 35
             signal['reason'] = f"Cassure résistance (${signal['nearest_resistance']:.2f})"
-        
+
         # Signal de vente : Rejet sur résistance
         elif self.is_at_resistance(current_price):
             signal['action'] = 'sell'
             signal['score'] = 25
             signal['reason'] = f"Rejet résistance (${signal['nearest_resistance']:.2f})"
-        
+
         # Signal de vente : Cassure de support
-        elif prev_price > signal['nearest_support'] and current_price <= signal['nearest_support']:
+        elif signal['nearest_support'] is not None and prev_price > signal['nearest_support'] and current_price <= signal['nearest_support']:
             signal['action'] = 'sell'
             signal['score'] = 30
             signal['reason'] = f"Cassure support (${signal['nearest_support']:.2f})"
