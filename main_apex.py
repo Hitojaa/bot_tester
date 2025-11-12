@@ -357,15 +357,15 @@ class ApexPredatorBot:
             # Ajuste la taille selon le score APEX
             if config.ADAPTIVE_POSITION_SIZING:
                 if apex_score >= config.IDEAL_APEX_SCORE:
-                    # Score excellent (85+) → Grande position (130%)
+                    # Score excellent (88+) → Grande position (130%)
                     multiplier = config.LARGE_POSITION_MULTIPLIER
                     size_label = "GRANDE"
                 elif apex_score >= config.GOOD_APEX_SCORE:
-                    # Bon score (75-85) → Position moyenne (100%)
+                    # Bon score (80-88) → Position moyenne (100%)
                     multiplier = config.MEDIUM_POSITION_MULTIPLIER
                     size_label = "MOYENNE"
                 else:
-                    # Score acceptable (65-75) → Petite position (60%)
+                    # Score acceptable (75-80) → Petite position (60%)
                     multiplier = config.SMALL_POSITION_MULTIPLIER
                     size_label = "PETITE"
 

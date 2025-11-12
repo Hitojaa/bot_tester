@@ -290,10 +290,16 @@ class ApexAI:
 
     def evaluate_exit_conditions(self, df, current_price, position_info, entry_apex_score):
         """
-        🚨 ÉVALUE LES CONDITIONS DE SORTIE DYNAMIQUE (V2.2 - NOUVEAU!)
+        🚨 ÉVALUE LES CONDITIONS DE SORTIE DYNAMIQUE (V2.3 - Scalping intelligent!)
 
         Détecte si les conditions favorables se détériorent et suggère une sortie
         anticipée avant d'atteindre le stop-loss ou le target.
+
+        🧠 V2.3: Mode scalping intelligent
+        - Laisse respirer le trade 2-3 bougies minimum
+        - Ne sort pas sur un seul signal (EMA9/MACD seuls)
+        - Respecte les setups valides (rebond, bougie verte)
+        - Exige convergence de plusieurs signaux négatifs
 
         Args:
             df: DataFrame avec indicateurs
@@ -321,8 +327,35 @@ class ApexAI:
         entry_price = position_info['entry_price']
         pnl_percent = ((current_price - entry_price) / entry_price)
 
+        # 🧠 PROTECTION 1: Laisse respirer le trade (minimum 2-3 bougies)
+        from datetime import datetime
+        entry_time = position_info.get('entry_time')
+        if entry_time:
+            time_in_position = (datetime.now() - entry_time).total_seconds()
+            candles_in_position = time_in_position / 60  # 1 min par bougie
+
+            if candles_in_position < config.MIN_CANDLES_IN_POSITION:
+                # Trop tôt pour évaluer, sauf si APEX s'effondre (< 40)
+                current_analysis = self.analyze_complete(df)
+                if current_analysis:
+                    current_apex = current_analysis['apex_score']['total_score']
+                    if current_apex >= 40:  # Setup encore valide
+                        return {'should_exit': False, 'exit_type': None, 'exit_percent': 0,
+                               'reasons': [f"🧠 Trade respire ({candles_in_position:.0f}/{config.MIN_CANDLES_IN_POSITION} bougies)"],
+                               'urgency': 'low'}
+
         # Ne pas sortir trop tôt si on n'a pas encore un minimum de profit
         has_min_profit = pnl_percent >= config.MIN_PROFIT_FOR_EARLY_EXIT
+
+        # 🧠 PROTECTION 2: Détecte si setup initial encore valide (rebond en cours)
+        setup_still_valid = False
+        if config.SMART_EXIT_MODE:
+            # Bougie verte récente = rebond en cours
+            if last_candle['close'] > last_candle['open']:
+                setup_still_valid = True
+            # RSI encore en survente = setup retournement valide
+            if 'rsi' in last_candle and last_candle['rsi'] < 30:
+                setup_still_valid = True
 
         # Compte les bougies consécutives avec stoch > 90
         stoch_overbought_count = 0
@@ -371,31 +404,46 @@ class ApexAI:
                     exit_percent = 1.0  # Sortie totale si pas encore profitable
 
         # ═══════════════════════════════════════════════════════════
-        # 2. PERTE DE MOMENTUM
+        # 2. PERTE DE MOMENTUM (🧠 Mode intelligent V2.3)
         # ═══════════════════════════════════════════════════════════
         if config.EXIT_ON_MOMENTUM_LOSS:
-            momentum_lost = False
+            momentum_signals = []
 
             # Prix repasse sous EMA9
             if config.EXIT_PRICE_UNDER_EMA and 'ema_fast' in last_candle:
                 if current_price < last_candle['ema_fast']:
-                    reasons.append(f"📉 Prix sous EMA9 (perte momentum)")
-                    momentum_lost = True
-                    urgency_score += 25
+                    # 🧠 MAIS: Ne sort pas si setup encore valide (bougie verte/rebond)
+                    if not setup_still_valid:
+                        momentum_signals.append("Prix sous EMA9")
+                        urgency_score += 15  # Réduit de 25 → 15
 
             # MACD devient négatif ou neutre
             if config.EXIT_MACD_BEARISH and 'macd' in last_candle and 'macd_signal' in last_candle:
                 if last_candle['macd'] < last_candle['macd_signal']:
-                    reasons.append(f"📉 MACD baissier (perte accélération)")
-                    momentum_lost = True
-                    urgency_score += 20
+                    # 🧠 MAIS: Ne sort pas si setup encore valide
+                    if not setup_still_valid:
+                        momentum_signals.append("MACD baissier")
+                        urgency_score += 12  # Réduit de 20 → 12
 
-            # Perte de momentum = sortie immédiate si on a du profit
-            if momentum_lost:
-                if has_min_profit:
-                    exit_percent = max(exit_percent, 0.7)  # Au moins 70%
-                else:
-                    exit_percent = 1.0  # Sortie totale
+            # 🧠 EXIGE CONVERGENCE: Besoin de 2+ signaux momentum ou 1 signal + autre détérioration
+            if config.REQUIRE_CONVERGENCE:
+                # Sortie seulement si 2+ signaux négatifs convergent
+                if len(momentum_signals) >= 2 or (len(momentum_signals) >= 1 and len(reasons) > 0):
+                    for sig in momentum_signals:
+                        reasons.append(f"📉 {sig} (perte momentum)")
+                    if has_min_profit:
+                        exit_percent = max(exit_percent, 0.5)  # Réduit de 70% → 50%
+                    else:
+                        exit_percent = max(exit_percent, 0.7)  # Réduit de 100% → 70%
+            else:
+                # Mode ancien (sans convergence): Sortie immédiate
+                if len(momentum_signals) > 0:
+                    for sig in momentum_signals:
+                        reasons.append(f"📉 {sig}")
+                    if has_min_profit:
+                        exit_percent = max(exit_percent, 0.7)
+                    else:
+                        exit_percent = 1.0
 
         # ═══════════════════════════════════════════════════════════
         # 3. DÉGRADATION DU SCORE APEX
