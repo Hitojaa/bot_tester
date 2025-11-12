@@ -3,13 +3,17 @@
 import ccxt
 import pandas as pd
 from datetime import datetime
+import time
 import config_apex as config
+from logger_apex import get_logger
 
 class DataCollectorApex:
     """Collecteur de données depuis Binance - Version APEX"""
     
     def __init__(self):
         """Initialise la connexion Binance"""
+        self.logger = get_logger()
+
         try:
             self.exchange = ccxt.binance({
                 'apiKey': config.BINANCE_API_KEY,
@@ -19,57 +23,87 @@ class DataCollectorApex:
                     'defaultType': 'spot'
                 }
             })
-            
+
             # Test de connexion
             self.exchange.load_markets()
             print("✅ Connexion Binance établie")
-            
+            self.logger.info("Connexion Binance établie")
+
         except Exception as e:
             print(f"❌ Erreur connexion Binance: {e}")
+            self.logger.error(f"Erreur connexion Binance: {e}")
             self.exchange = None
+
+    def _retry_api_call(self, func, max_retries=3, delay=2):
+        """
+        Exécute un appel API avec retry en cas d'erreur
+
+        Args:
+            func: Fonction à exécuter
+            max_retries: Nombre de tentatives max
+            delay: Délai entre les tentatives (secondes)
+
+        Returns:
+            Résultat de la fonction ou None
+        """
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except ccxt.NetworkError as e:
+                if attempt < max_retries - 1:
+                    print(f"⚠️  Erreur réseau (tentative {attempt + 1}/{max_retries})")
+                    self.logger.warning(f"Erreur réseau, retry dans {delay}s: {e}")
+                    time.sleep(delay)
+                else:
+                    print(f"❌ Échec après {max_retries} tentatives")
+                    self.logger.error(f"Échec après {max_retries} tentatives: {e}")
+                    return None
+            except Exception as e:
+                print(f"❌ Erreur API: {e}")
+                self.logger.error(f"Erreur API: {e}")
+                return None
     
     def get_historical_data(self, symbol=None, timeframe=None, limit=500):
         """
-        Récupère les données historiques
-        
+        Récupère les données historiques avec retry automatique
+
         Args:
             symbol: Paire (défaut: config)
             timeframe: Timeframe (défaut: config)
             limit: Nombre de bougies
-            
+
         Returns:
             DataFrame: OHLCV
         """
         if self.exchange is None:
             print("❌ Pas de connexion Binance")
             return None
-        
+
         if symbol is None:
             symbol = config.SYMBOL
         if timeframe is None:
             timeframe = config.TIMEFRAME
-        
-        try:
+
+        def fetch_data():
             # Récupère les bougies
             ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-            
+
             # Convertit en DataFrame
             df = pd.DataFrame(
                 ohlcv,
                 columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
             )
-            
+
             # Convertit timestamp en datetime
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            
+
             if config.VERBOSE:
                 print(f"✅ {len(df)} bougies récupérées pour {symbol} ({timeframe})")
-            
+
             return df
-            
-        except Exception as e:
-            print(f"❌ Erreur récupération données: {e}")
-            return None
+
+        # Utilise le retry mechanism
+        return self._retry_api_call(fetch_data)
     
     def get_current_price(self, symbol=None):
         """Récupère le prix actuel"""

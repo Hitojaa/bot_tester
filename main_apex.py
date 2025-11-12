@@ -26,6 +26,7 @@ from data_collector_apex import DataCollectorApex
 from indicators_advanced import AdvancedIndicators
 from ai_apex import ApexAI
 from trader_apex import TraderApex
+from setup_interactive import run_interactive_setup
 
 class ApexPredatorBot:
     """Le Bot de Scalping PRO Ultime"""
@@ -163,7 +164,16 @@ class ApexPredatorBot:
                 if not self.is_observation_complete():
                     remaining = config.MIN_OBSERVATION_TIME - (datetime.now() - self.observation_start).total_seconds()
                     print(f"\n⏳ Phase d'observation: {remaining/60:.1f} minutes restantes")
-                    return
+
+                    # EMERGENCY BUY : Si opportunité EXCEPTIONNELLE, trade quand même !
+                    apex_score = analysis['apex_score']['total_score']
+                    if apex_score >= 92 and analysis['decision']['action'] == 'buy':
+                        print(f"\n🚨 OPPORTUNITÉ EXCEPTIONNELLE DÉTECTÉE!")
+                        print(f"   APEX Score: {apex_score:.1f}/100 (>92)")
+                        print(f"   🔥 EMERGENCY BUY activé - Phase d'observation ignorée!")
+                        self.can_trade = True  # Active temporairement
+                    else:
+                        return
                 else:
                     self.can_trade = True
                     print("\n✅ PHASE D'OBSERVATION TERMINÉE!")
@@ -462,13 +472,22 @@ class ApexPredatorBot:
 def main():
     """Point d'entrée principal"""
     try:
+        # Lance le setup interactif
+        print("🔧 Configuration du bot...")
+        user_wants_interactive = input("\nUtiliser la configuration interactive? (y/n, défaut: y): ").strip().lower()
+
+        if user_wants_interactive != 'n' and user_wants_interactive != 'non':
+            run_interactive_setup()
+        else:
+            print("✅ Utilisation de la configuration par défaut")
+
         # Crée et démarre le bot
         bot = ApexPredatorBot()
         bot.start()
-    
+
     except KeyboardInterrupt:
         print("\n\n👋 Au revoir!")
-    
+
     except Exception as e:
         print(f"\n\n❌ Erreur fatale: {e}")
         import traceback

@@ -1,10 +1,26 @@
 # config_apex.py - Configuration PRO du bot APEX PREDATOR
 
+import os
+
 # ═══════════════════════════════════════════════════════════
-# 🔐 BINANCE API (OBLIGATOIRE)
+# 🔐 BINANCE API (CHARGÉES DEPUIS VARIABLES D'ENVIRONNEMENT)
 # ═══════════════════════════════════════════════════════════
-BINANCE_API_KEY = "jF0g4luf0aoTn2myoWaivW3R1cP7JiPT1E4dOe6guz6olaiCJmFelCWX4YX4qbm7"
-BINANCE_SECRET_KEY = "M7TIECN2ONPU6OJhRiJQuK1Dm7U6aDDPP6Ue5xFoSu3TUW3ch2hCbtk4ameTDrOe"
+
+# Essaie de charger python-dotenv si disponible
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Charge le fichier .env
+except ImportError:
+    pass  # python-dotenv n'est pas installé, utilise juste os.environ
+
+# Charge les clés depuis les variables d'environnement
+BINANCE_API_KEY = os.environ.get("BINANCE_API_KEY", "")
+BINANCE_SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY", "")
+
+# ⚠️  ANCIEN FORMAT (OBSOLÈTE - NE PLUS UTILISER)
+# Si tu veux quand même hardcoder (non recommandé):
+# BINANCE_API_KEY = "ta_clé_ici"
+# BINANCE_SECRET_KEY = "ton_secret_ici"
 
 # ═══════════════════════════════════════════════════════════
 # 🎯 CONFIGURATION SCALPING PRO
