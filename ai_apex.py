@@ -288,6 +288,181 @@ class ApexAI:
             'active': len(signals_detected) >= 2  # Activé si 2+ signaux
         }
 
+    def evaluate_exit_conditions(self, df, current_price, position_info, entry_apex_score):
+        """
+        🚨 ÉVALUE LES CONDITIONS DE SORTIE DYNAMIQUE (V2.2 - NOUVEAU!)
+
+        Détecte si les conditions favorables se détériorent et suggère une sortie
+        anticipée avant d'atteindre le stop-loss ou le target.
+
+        Args:
+            df: DataFrame avec indicateurs
+            current_price: Prix actuel
+            position_info: Info sur la position ouverte
+            entry_apex_score: Score APEX à l'entrée du trade
+
+        Returns:
+            dict: {
+                'should_exit': bool,
+                'exit_type': 'full' | 'partial' | None,
+                'exit_percent': float (0-1),
+                'reasons': list[str],
+                'urgency': 'critical' | 'high' | 'medium' | 'low'
+            }
+        """
+        if not config.DYNAMIC_EXITS_ENABLED:
+            return {'should_exit': False, 'exit_type': None, 'exit_percent': 0, 'reasons': [], 'urgency': 'low'}
+
+        reasons = []
+        urgency_score = 0  # Plus le score est élevé, plus c'est urgent
+        exit_percent = 0
+
+        last_candle = df.iloc[-1]
+        entry_price = position_info['entry_price']
+        pnl_percent = ((current_price - entry_price) / entry_price)
+
+        # Ne pas sortir trop tôt si on n'a pas encore un minimum de profit
+        has_min_profit = pnl_percent >= config.MIN_PROFIT_FOR_EARLY_EXIT
+
+        # Compte les bougies consécutives avec stoch > 90
+        stoch_overbought_count = 0
+        if 'stoch_k' in df.columns:
+            for i in range(min(config.EXIT_STOCH_DURATION, len(df))):
+                if df.iloc[-(i+1)]['stoch_k'] > config.EXIT_STOCH_OVERBOUGHT:
+                    stoch_overbought_count += 1
+                else:
+                    break
+
+        # ═══════════════════════════════════════════════════════════
+        # 1. DÉTÉRIORATION DES CONDITIONS
+        # ═══════════════════════════════════════════════════════════
+        if config.EXIT_ON_DETERIORATION:
+            deterioration_signals = 0
+
+            # Stochastique en surachat prolongé
+            if stoch_overbought_count >= config.EXIT_STOCH_DURATION:
+                reasons.append(f"⚠️ Stochastique en surachat prolongé ({stoch_overbought_count} bougies >90)")
+                deterioration_signals += 1
+                urgency_score += 20
+
+            # Order Flow négatif (si disponible dans l'analyse micro)
+            # On devra passer l'analysis actuelle pour avoir ces infos
+
+            # APEX critique ou stagnant
+            current_analysis = self.analyze_complete(df)
+            if current_analysis:
+                current_apex = current_analysis['apex_score']['total_score']
+
+                if current_apex < config.EXIT_APEX_CRITICAL:
+                    reasons.append(f"🚨 APEX CRITIQUE ({current_apex:.0f} < {config.EXIT_APEX_CRITICAL})")
+                    deterioration_signals += 1
+                    urgency_score += 30
+
+                elif current_apex < config.EXIT_APEX_STAGNANT and has_min_profit:
+                    reasons.append(f"⚠️ APEX stagnant ({current_apex:.0f} < {config.EXIT_APEX_STAGNANT})")
+                    deterioration_signals += 1
+                    urgency_score += 15
+
+            # Si 2+ signaux de détérioration → Sortie partielle ou totale
+            if deterioration_signals >= 2:
+                if has_min_profit:
+                    exit_percent = 0.5 if deterioration_signals >= 3 else 0.3  # 50% ou 30%
+                else:
+                    exit_percent = 1.0  # Sortie totale si pas encore profitable
+
+        # ═══════════════════════════════════════════════════════════
+        # 2. PERTE DE MOMENTUM
+        # ═══════════════════════════════════════════════════════════
+        if config.EXIT_ON_MOMENTUM_LOSS:
+            momentum_lost = False
+
+            # Prix repasse sous EMA9
+            if config.EXIT_PRICE_UNDER_EMA and 'ema_fast' in last_candle:
+                if current_price < last_candle['ema_fast']:
+                    reasons.append(f"📉 Prix sous EMA9 (perte momentum)")
+                    momentum_lost = True
+                    urgency_score += 25
+
+            # MACD devient négatif ou neutre
+            if config.EXIT_MACD_BEARISH and 'macd' in last_candle and 'macd_signal' in last_candle:
+                if last_candle['macd'] < last_candle['macd_signal']:
+                    reasons.append(f"📉 MACD baissier (perte accélération)")
+                    momentum_lost = True
+                    urgency_score += 20
+
+            # Perte de momentum = sortie immédiate si on a du profit
+            if momentum_lost:
+                if has_min_profit:
+                    exit_percent = max(exit_percent, 0.7)  # Au moins 70%
+                else:
+                    exit_percent = 1.0  # Sortie totale
+
+        # ═══════════════════════════════════════════════════════════
+        # 3. DÉGRADATION DU SCORE APEX
+        # ═══════════════════════════════════════════════════════════
+        if config.EXIT_ON_APEX_DROP and current_analysis:
+            current_apex = current_analysis['apex_score']['total_score']
+            apex_drop = current_apex - entry_apex_score
+
+            if apex_drop <= config.EXIT_APEX_DROP_THRESHOLD:
+                reasons.append(f"📊 APEX en chute ({apex_drop:+.0f} points vs entrée)")
+                urgency_score += 35
+                exit_percent = max(exit_percent, 0.8 if has_min_profit else 1.0)
+
+            # Changement de régime de marché
+            if config.EXIT_REGIME_CHANGE:
+                if current_analysis['market_regime'] in ['ranging', 'neutral', 'trending_down']:
+                    if self.market_regime == 'trending_up':  # On était en tendance haussière
+                        reasons.append(f"🔄 Régime changé: {self.market_regime} → {current_analysis['market_regime']}")
+                        urgency_score += 25
+                        exit_percent = max(exit_percent, 0.5)
+
+        # ═══════════════════════════════════════════════════════════
+        # 4. TAKE-PROFIT PROGRESSIF (conditions neutres)
+        # ═══════════════════════════════════════════════════════════
+        if config.PROGRESSIVE_EXITS_ENABLED and pnl_percent > 0:
+            # +1.0% → Sortie partielle si conditions neutres
+            if pnl_percent >= config.PARTIAL_EXIT_2_PROFIT:
+                if current_analysis and current_analysis['apex_score']['total_score'] < 70:
+                    reasons.append(f"💰 TP progressif: +{pnl_percent*100:.1f}% avec conditions neutres")
+                    exit_percent = max(exit_percent, 0.3)
+                    urgency_score += 10
+
+            # +0.5% → Sortie partielle si conditions se dégradent
+            elif pnl_percent >= config.PARTIAL_EXIT_1_PROFIT:
+                if len(reasons) > 0:  # Si d'autres signaux de dégradation
+                    reasons.append(f"💰 TP progressif: +{pnl_percent*100:.1f}% avec dégradation")
+                    exit_percent = max(exit_percent, 0.3)
+                    urgency_score += 5
+
+        # Détermine l'urgence
+        if urgency_score >= 60:
+            urgency = 'critical'
+        elif urgency_score >= 40:
+            urgency = 'high'
+        elif urgency_score >= 20:
+            urgency = 'medium'
+        else:
+            urgency = 'low'
+
+        # Détermine le type de sortie
+        should_exit = len(reasons) > 0 and exit_percent > 0
+        exit_type = None
+        if should_exit:
+            if exit_percent >= 0.9:
+                exit_type = 'full'
+            elif exit_percent > 0:
+                exit_type = 'partial'
+
+        return {
+            'should_exit': should_exit,
+            'exit_type': exit_type,
+            'exit_percent': exit_percent,
+            'reasons': reasons,
+            'urgency': urgency,
+            'urgency_score': urgency_score
+        }
+
     def _calculate_apex_score(self, macro, meso, micro, power_signals=None):
         """
         Calcule le APEX SCORE final (0-100)

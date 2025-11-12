@@ -199,49 +199,99 @@ class ApexPredatorBot:
             traceback.print_exc()
     
     def _manage_open_position(self, current_price, df, analysis):
-        """Gère une position ouverte"""
+        """Gère une position ouverte avec sorties dynamiques intelligentes"""
         position = self.trader.get_position_info()
-        
+
         print(f"\n📍 POSITION OUVERTE")
         print("="*70)
-        
+
         entry_price = position['entry_price']
         pnl_percent = ((current_price - entry_price) / entry_price) * 100
         pnl_usdt = (current_price - entry_price) * position['quantity']
-        
+
         emoji = "🟢" if pnl_percent > 0 else "🔴"
         print(f"💰 Entrée: ${entry_price:.2f}")
         print(f"💰 Actuel: ${current_price:.2f}")
         print(f"{emoji} P&L: {pnl_percent:+.2f}% (${pnl_usdt:+.2f})")
         print(f"🛡️  Stop: ${position['stop_loss']:.2f}")
         print(f"🎯 Target: ${position['take_profit']:.2f}")
-        
+
         if position['targets_hit']:
             print(f"✅ Targets atteints: {', '.join(position['targets_hit'])}")
-        
+
         # Vérifie multi-targets
         target_hit = self.trader.check_multi_target_exit(current_price)
-        
+
         # Vérifie stop-loss
         if current_price <= position['stop_loss']:
             print(f"\n🛑 STOP-LOSS ATTEINT!")
             self.trader.sell(current_price, "Stop-loss")
             return
-        
+
         # Vérifie take-profit
         if current_price >= position['take_profit']:
             print(f"\n🎯 TAKE-PROFIT ATTEINT!")
             self.trader.sell(current_price, "Take-profit")
             return
-        
-        # Vérifie signal de sortie IA
+
+        # 🔥 NOUVEAU: ÉVALUE LES CONDITIONS DE SORTIE DYNAMIQUE
+        if config.DYNAMIC_EXITS_ENABLED:
+            entry_apex_score = position.get('entry_apex_score', 70)  # Default si pas stocké
+            exit_eval = self.ai.evaluate_exit_conditions(df, current_price, position, entry_apex_score)
+
+            if exit_eval['should_exit']:
+                print(f"\n🚨 SORTIE DYNAMIQUE DÉTECTÉE!")
+                print(f"   Type: {exit_eval['exit_type'].upper()}")
+                print(f"   Urgence: {exit_eval['urgency'].upper()}")
+                print(f"   Pourcentage: {exit_eval['exit_percent']*100:.0f}%")
+                print(f"\n   📋 RAISONS:")
+                for reason in exit_eval['reasons']:
+                    print(f"      • {reason}")
+
+                # Sortie CRITIQUE ou HAUTE urgence = exécution immédiate
+                if exit_eval['urgency'] in ['critical', 'high']:
+                    print(f"\n⚡ URGENCE {exit_eval['urgency'].upper()} - Sortie immédiate!")
+
+                    if exit_eval['exit_type'] == 'full':
+                        self.trader.sell(current_price, f"Sortie dynamique urgente: {', '.join(exit_eval['reasons'][:2])}")
+                        return
+                    else:
+                        self.trader.sell_partial(current_price, exit_eval['exit_percent'],
+                                                f"Sortie partielle urgente: {', '.join(exit_eval['reasons'][:2])}")
+                        return
+
+                # Sortie MEDIUM urgence = demande confirmation en mode réel
+                elif exit_eval['urgency'] == 'medium':
+                    if config.DRY_RUN:
+                        print(f"\n🤖 MODE SIMULATION - Sortie automatique")
+                        if exit_eval['exit_type'] == 'full':
+                            self.trader.sell(current_price, f"Sortie dynamique: {', '.join(exit_eval['reasons'][:2])}")
+                        else:
+                            self.trader.sell_partial(current_price, exit_eval['exit_percent'],
+                                                    f"Sortie partielle: {', '.join(exit_eval['reasons'][:2])}")
+                        return
+                    else:
+                        response = input("\n⚠️  Exécuter cette sortie? (y/n): ")
+                        if response.lower() == 'y':
+                            if exit_eval['exit_type'] == 'full':
+                                self.trader.sell(current_price, f"Sortie dynamique: {', '.join(exit_eval['reasons'][:2])}")
+                            else:
+                                self.trader.sell_partial(current_price, exit_eval['exit_percent'],
+                                                        f"Sortie partielle: {', '.join(exit_eval['reasons'][:2])}")
+                            return
+
+        # Vérifie signal de sortie IA (ancien système, conservé en backup)
         if analysis['decision']['action'] == 'sell' and analysis['confidence'] >= 80:
             print(f"\n⚠️  SIGNAL DE SORTIE IA (Confiance: {analysis['confidence']:.0f}%)")
-            response = input("Fermer la position maintenant? (y/n): ")
-            if response.lower() == 'y':
+            if config.DRY_RUN:
                 self.trader.sell(current_price, "Signal IA")
                 return
-        
+            else:
+                response = input("Fermer la position maintenant? (y/n): ")
+                if response.lower() == 'y':
+                    self.trader.sell(current_price, "Signal IA")
+                    return
+
         print("\n⏳ Maintien de la position")
     
     def _look_for_entry(self, current_price, df, analysis):
@@ -343,7 +393,7 @@ class ApexPredatorBot:
             
             # EXÉCUTE LE TRADE !
             print(f"\n🚀 EXÉCUTION DU TRADE...")
-            position = self.trader.buy(current_price, quantity, stop_loss, take_profit)
+            position = self.trader.buy(current_price, quantity, stop_loss, take_profit, apex_score=apex_score)
             
             if position:
                 self.stats['trades_executed'] += 1
