@@ -254,10 +254,11 @@ class DatasetBuilder:
     def _calculate_all_indicators(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Calcule tous les indicateurs nécessaires"""
         try:
-            df = self.indicators.add_all_indicators(df)
+            df = AdvancedIndicators.calculate_all(df)
             return df
         except Exception as e:
             self.logger.error(f"Erreur calcul indicateurs: {e}")
+            print(f"❌ Erreur calcul indicateurs")
             return None
 
     def _extract_features_batch(self, df: pd.DataFrame) -> Tuple[List, List]:

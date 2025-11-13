@@ -29,6 +29,7 @@ import ml_config as ml_config
 from feature_extractor import FeatureExtractor
 from logger_apex import get_logger
 import os
+import glob
 from datetime import datetime
 import argparse
 
@@ -304,9 +305,21 @@ if __name__ == "__main__":
     print("🤖 APEX ML Model Trainer")
     print("="*70)
 
+    # Résout les wildcards (pour Windows PowerShell)
+    dataset_path = args.dataset
+    if '*' in dataset_path or '?' in dataset_path:
+        print(f"\n🔍 Recherche fichiers: {dataset_path}")
+        matching_files = glob.glob(dataset_path)
+        if not matching_files:
+            print(f"❌ Aucun fichier trouvé pour: {dataset_path}")
+            exit(1)
+        # Prend le plus récent
+        dataset_path = max(matching_files, key=os.path.getctime)
+        print(f"✅ Fichier trouvé: {os.path.basename(dataset_path)}")
+
     # Charge dataset
     trainer = ModelTrainer(model_type=args.model)
-    X, y, dataset_info = trainer.load_dataset(args.dataset)
+    X, y, dataset_info = trainer.load_dataset(dataset_path)
 
     if X is None:
         print("\n❌ Échec chargement dataset")
