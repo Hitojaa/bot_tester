@@ -1,16 +1,27 @@
-# logger_apex.py - Système de logging pour APEX
+# logger_apex.py - Système de logging pour APEX (V2.4 - Sans duplication)
 
 import logging
 from datetime import datetime
 import os
 
 class ApexLogger:
-    """Logger personnalisé pour le bot APEX"""
+    """
+    Logger personnalisé pour le bot APEX
+
+    V2.4: Protection contre la duplication de handlers
+    - Vérifie si des handlers existent déjà avant d'en ajouter
+    - Instance singleton garantie via get_logger()
+    """
 
     def __init__(self, log_to_file=True, log_to_console=True):
         """Initialise le logger"""
         self.logger = logging.getLogger("ApexPredator")
         self.logger.setLevel(logging.INFO)
+
+        # 🔧 PROTECTION: Évite la duplication de handlers
+        # Si le logger a déjà des handlers, on ne les recrée pas
+        if self.logger.handlers:
+            return
 
         # Crée le dossier logs s'il n'existe pas
         if log_to_file and not os.path.exists('logs'):
