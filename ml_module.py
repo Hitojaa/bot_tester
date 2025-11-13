@@ -18,9 +18,11 @@ Architecture:
 
 import os
 import pickle
+import json
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 from collections import deque
+from datetime import datetime
 import ml_config as ml_config
 from feature_extractor import FeatureExtractor
 from logger_apex import get_logger
@@ -60,6 +62,10 @@ class MLPredictor:
         # Chargement du modèle
         if ml_config.ML_ENABLED:
             self.load_model()
+
+        # 💾 Chargement des stats persistantes (accuracy, weight, historique)
+        self.stats_path = os.path.join(ml_config.ML_MODEL_PATH, 'apex_ml_stats.json')
+        self.load_stats()
 
         self.logger.info(f"✅ MLPredictor initialisé (enabled: {ml_config.ML_ENABLED})")
 
@@ -208,6 +214,9 @@ class MLPredictor:
         if self.trade_count % ml_config.ML_REWEIGHT_THRESHOLD == 0:
             self._recompute_weight()
 
+        # 💾 Sauvegarde les stats après chaque update
+        self.save_stats()
+
         self.logger.info(f"📊 ML Accuracy mise à jour: {self.accuracy_rate*100:.1f}% ({len(self.predictions_history)} trades)")
 
     def _recompute_weight(self):
@@ -234,6 +243,67 @@ class MLPredictor:
             self.current_weight = ml_config.ML_INITIAL_WEIGHT
 
         self.logger.info(f"🔄 ML Weight ajusté: {self.current_weight:.2%} (accuracy: {self.accuracy_rate*100:.1f}%)")
+
+    def save_stats(self):
+        """
+        💾 Sauvegarde les stats ML dans un fichier JSON
+        Permet de conserver l'accuracy et l'historique entre les redémarrages
+        """
+        try:
+            # Crée le dossier si nécessaire
+            os.makedirs(os.path.dirname(self.stats_path), exist_ok=True)
+
+            stats_data = {
+                'predictions_history': list(self.predictions_history),
+                'accuracy_rate': float(self.accuracy_rate),
+                'current_weight': float(self.current_weight),
+                'trade_count': int(self.trade_count),
+                'total_predictions': int(self.total_predictions),
+                'correct_predictions': int(self.correct_predictions),
+                'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+
+            with open(self.stats_path, 'w') as f:
+                json.dump(stats_data, f, indent=2)
+
+            # self.logger.debug(f"💾 Stats ML sauvegardées: {self.stats_path}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Erreur sauvegarde stats ML: {e}")
+
+    def load_stats(self):
+        """
+        📂 Charge les stats ML depuis le fichier JSON
+        Restaure l'accuracy et l'historique des trades précédents
+        """
+        if not os.path.exists(self.stats_path):
+            self.logger.info("📊 Aucun historique ML trouvé (première session)")
+            return
+
+        try:
+            with open(self.stats_path, 'r') as f:
+                stats_data = json.load(f)
+
+            # Restaure l'historique
+            self.predictions_history = deque(
+                stats_data.get('predictions_history', []),
+                maxlen=ml_config.ML_ACCURACY_WINDOW
+            )
+            self.accuracy_rate = stats_data.get('accuracy_rate', 0.5)
+            self.current_weight = stats_data.get('current_weight', ml_config.ML_INITIAL_WEIGHT)
+            self.trade_count = stats_data.get('trade_count', 0)
+            self.total_predictions = stats_data.get('total_predictions', 0)
+            self.correct_predictions = stats_data.get('correct_predictions', 0)
+
+            last_updated = stats_data.get('last_updated', 'inconnu')
+            history_size = len(self.predictions_history)
+
+            print(f"📊 Stats ML rechargées: Accuracy {self.accuracy_rate*100:.1f}%, Weight {self.current_weight*100:.0f}%, {history_size} trades en mémoire")
+            self.logger.info(f"✅ Stats ML rechargées depuis {last_updated}")
+
+        except Exception as e:
+            self.logger.error(f"❌ Erreur chargement stats ML: {e}")
+            self.logger.info("🔄 Réinitialisation des stats ML")
 
     def get_stats(self) -> Dict:
         """Retourne les statistiques du modèle ML"""

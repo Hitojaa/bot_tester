@@ -56,3 +56,8 @@ Thumbs.db
 trades_history.csv
 performance_report.txt
 backtest_results/
+
+# ML data (generated during usage)
+models/*.pkl
+models/*.json
+datasets/*.pkl
