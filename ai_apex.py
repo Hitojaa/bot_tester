@@ -2,34 +2,72 @@
 
 import pandas as pd
 import numpy as np
+import os
 import config_apex as config
 from indicators_advanced import AdvancedIndicators
 from pattern_scanner import PatternScanner
 from volume_profile_engine import VolumeProfileEngine
 from support_resistance_detector import SupportResistanceDetector
+from ml_module import MLPredictor
 
 class ApexAI:
     """
     Intelligence Artificielle APEX
-    Analyse multi-layer : Macro → Méso → Micro
+    Analyse multi-layer : Macro → Méso → Micro → ML
     """
-    
+
     def __init__(self):
         self.pattern_scanner = PatternScanner()
         self.volume_engine = VolumeProfileEngine()
         self.sr_detector = SupportResistanceDetector()
-        
+
         # État du marché
         self.market_regime = 'neutral'
         self.trend_strength = 0
         self.volatility_level = 'normal'
-        
+
         # Historique des prédictions
         self.predictions_history = []
         self.accuracy_rate = 0.5  # Commence à 50%
-        
-        print("✅ IA APEX initialisée (Multi-Layer)")
-    
+
+        # 🤖 ML PREDICTOR (4ème couche - V2.4)
+        self.ml_predictor = None
+        self.ml_enabled = False
+        self._initialize_ml()
+
+        if self.ml_enabled:
+            print("✅ IA APEX initialisée (Multi-Layer + ML)")
+        else:
+            print("✅ IA APEX initialisée (Multi-Layer)")
+
+    def _initialize_ml(self):
+        """
+        🤖 Initialise le système de Machine Learning
+        Charge le modèle si disponible, sinon désactive ML
+        """
+        model_path = 'models/apex_ml_model.pkl'
+
+        if not os.path.exists(model_path):
+            print("⚠️  Aucun modèle ML trouvé (train avec train_ml_model.py)")
+            self.ml_enabled = False
+            return
+
+        try:
+            self.ml_predictor = MLPredictor()
+            success = self.ml_predictor.load_model(model_path)
+
+            if success:
+                self.ml_enabled = True
+                print(f"🤖 Modèle ML chargé: {model_path}")
+            else:
+                self.ml_enabled = False
+                print("❌ Échec chargement modèle ML")
+
+        except Exception as e:
+            print(f"❌ Erreur init ML: {e}")
+            self.ml_enabled = False
+            self.ml_predictor = None
+
     def analyze_complete(self, df):
         """
         Analyse COMPLÈTE multi-layer
@@ -52,15 +90,19 @@ class ApexAI:
         # LAYER 3 : MICRO (Court terme - Exécution)
         micro_analysis = self._analyze_micro(df, current_price, prev_price)
 
+        # 🤖 LAYER 4 : MACHINE LEARNING (Prédiction probabiliste - V2.4)
+        ml_analysis = self._analyze_ml(df)
+
         # 🆕 V2.1: DÉTECTION POWER SIGNALS (signaux ultra-forts)
         power_signals = self._detect_power_signals(df, current_price, prev_price,
                                                      macro_analysis, meso_analysis, micro_analysis)
 
-        # Calcule le APEX SCORE final (avec power signals)
+        # Calcule le APEX SCORE final (avec ML + power signals)
         apex_score = self._calculate_apex_score(
             macro_analysis,
             meso_analysis,
             micro_analysis,
+            ml_analysis,
             power_signals
         )
 
@@ -73,6 +115,7 @@ class ApexAI:
             'macro': macro_analysis,
             'meso': meso_analysis,
             'micro': micro_analysis,
+            'ml': ml_analysis,
             'power_signals': power_signals,
             'market_regime': self.market_regime,
             'confidence': apex_score['total_score']
@@ -211,7 +254,94 @@ class ApexAI:
             'volume_spike': volume_spike,
             'reasons': reasons
         }
-    
+
+    def _analyze_ml(self, df):
+        """
+        🤖 LAYER 4 : Analyse MACHINE LEARNING (V2.4)
+        Prédiction probabiliste basée sur 50k+ exemples historiques
+
+        Returns:
+            dict: Prédiction ML + probabilité + confidence + poids dynamique
+        """
+        if not self.ml_enabled or self.ml_predictor is None:
+            # ML désactivé ou pas de modèle
+            return {
+                'enabled': False,
+                'score': 0,
+                'prediction': None,
+                'probability': 0.5,
+                'confidence': 0,
+                'weight': 0,
+                'accuracy': 0,
+                'reasons': ['ML désactivé (pas de modèle entraîné)']
+            }
+
+        try:
+            # Obtient S/R pour contexte
+            support_resistance = {
+                'support_levels': self.sr_detector.support_levels,
+                'resistance_levels': self.sr_detector.resistance_levels
+            }
+
+            # Prédiction ML
+            ml_result = self.ml_predictor.predict(df, support_resistance)
+
+            if ml_result is None:
+                return {
+                    'enabled': True,
+                    'score': 0,
+                    'prediction': None,
+                    'probability': 0.5,
+                    'confidence': 0,
+                    'weight': 0,
+                    'accuracy': self.ml_predictor.accuracy_rate * 100,
+                    'reasons': ['Échec extraction features']
+                }
+
+            # Interprétation
+            prediction = ml_result['prediction']
+            probability = ml_result['probability']  # 0-1
+            confidence = ml_result['confidence']    # 0-1 (ajusté par accuracy)
+            ml_score = ml_result['ml_score']        # -100 à +100
+            weight = ml_result['weight']            # 0.15 à 0.30
+
+            reasons = []
+            if prediction == 1:
+                reasons.append(f"ML prédit WIN ({probability*100:.1f}% confiance)")
+            else:
+                reasons.append(f"ML prédit LOSS ({(1-probability)*100:.1f}% confiance)")
+
+            # Ajoute info sur accuracy
+            accuracy_pct = self.ml_predictor.accuracy_rate * 100
+            if accuracy_pct >= 65:
+                reasons.append(f"Accuracy élevée ({accuracy_pct:.1f}%) → Poids {weight*100:.0f}%")
+            elif accuracy_pct < 50:
+                reasons.append(f"Accuracy faible ({accuracy_pct:.1f}%) → Poids {weight*100:.0f}%")
+
+            return {
+                'enabled': True,
+                'score': ml_score,              # -100 à +100
+                'prediction': prediction,        # 0 ou 1
+                'probability': probability,      # 0-1
+                'confidence': confidence,        # 0-1
+                'weight': weight,                # 0.15-0.30
+                'accuracy': accuracy_pct,        # 0-100
+                'reasons': reasons
+            }
+
+        except Exception as e:
+            print(f"❌ Erreur ML prediction: {e}")
+            return {
+                'enabled': False,
+                'score': 0,
+                'prediction': None,
+                'probability': 0.5,
+                'confidence': 0,
+                'weight': 0,
+                'accuracy': 0,
+                'reasons': [f'Erreur ML: {str(e)[:50]}']
+            }
+
     def _detect_power_signals(self, df, current_price, prev_price, macro, meso, micro):
         """
         🔥 POWER SIGNALS - Détecte les signaux ULTRA-FORTS qui justifient un trade immédiat
@@ -511,32 +641,48 @@ class ApexAI:
             'urgency_score': urgency_score
         }
 
-    def _calculate_apex_score(self, macro, meso, micro, power_signals=None):
+    def _calculate_apex_score(self, macro, meso, micro, ml_analysis, power_signals=None):
         """
         Calcule le APEX SCORE final (0-100)
-        Combine les 3 layers avec pondération
+        Combine les 4 layers avec pondération
 
-        ⚡ NOUVELLE PONDÉRATION V2.1 (ULTRA réactive) :
-        - Micro (patterns, timing) : 50% (↑ de 40%)
-        - Méso (zones clés) : 35% (stable)
-        - Macro (contexte) : 15% (↓ de 25%)
+        🤖 NOUVELLE PONDÉRATION V2.4 (avec ML) :
+        - Micro (patterns, timing) : 40%
+        - Méso (zones clés) : 30%
+        - ML (prédiction) : 15-30% (dynamique selon accuracy!)
+        - Macro (contexte) : 15%
         + POWER SIGNALS : +50 points max si 2+ signaux forts détectés
 
-        Rationale: En scalping 1m, un RSI à 20 + gros volume = ACHAT,
-        peu importe la tendance 4h ! Le timing immédiat prime sur tout.
+        🧠 Le poids ML s'ajuste automatiquement:
+        - Accuracy >65% → ML weight = 25-30%
+        - Accuracy 50-65% → ML weight = 15%
+        - Accuracy <50% → ML weight = 5-10%
         """
-        # Pondération des layers (V2.1 - ULTRA réactive)
-        macro_weight = 0.15   # 15% - Contexte (encore réduit !)
-        meso_weight = 0.35    # 35% - Zones clés (stable)
-        micro_weight = 0.50   # 50% - Exécution (augmenté !)
-        
+        # Pondération des layers (V2.4 - avec ML)
+        ml_enabled = ml_analysis.get('enabled', False)
+        ml_weight = ml_analysis.get('weight', 0) if ml_enabled else 0
+
+        # Ajuste les autres poids pour garder total = 100%
+        if ml_enabled:
+            # ML actif: redistribue les poids
+            remaining_weight = 1.0 - ml_weight
+            macro_weight = 0.15 * remaining_weight
+            meso_weight = 0.30 * remaining_weight
+            micro_weight = 0.40 * remaining_weight
+        else:
+            # ML inactif: pondération classique V2.1
+            macro_weight = 0.15
+            meso_weight = 0.35
+            micro_weight = 0.50
+
         # Scores pondérés
         weighted_macro = macro['score'] * macro_weight
         weighted_meso = meso['score'] * meso_weight
         weighted_micro = micro['score'] * micro_weight
-        
+        weighted_ml = ml_analysis.get('score', 0) * ml_weight
+
         # Score brut (-100 à +100)
-        raw_score = weighted_macro + weighted_meso + weighted_micro
+        raw_score = weighted_macro + weighted_meso + weighted_micro + weighted_ml
         
         # Convertit en 0-100
         # -100 = 0 (très baissier)
@@ -573,6 +719,9 @@ class ApexAI:
             'macro_contribution': weighted_macro,
             'meso_contribution': weighted_meso,
             'micro_contribution': weighted_micro,
+            'ml_contribution': weighted_ml,
+            'ml_enabled': ml_enabled,
+            'ml_weight': ml_weight,
             'volume_boost': volume_boost,
             'volatility_adjustment': volatility_adjustment,
             'power_boost': power_boost,
@@ -773,6 +922,12 @@ class ApexAI:
         print(f"   Méso (zones):      {apex['meso_contribution']:+.1f}")
         print(f"   Micro (exécution): {apex['micro_contribution']:+.1f}")
 
+        # 🤖 Affichage ML si activé
+        if apex.get('ml_enabled', False):
+            ml_contrib = apex.get('ml_contribution', 0)
+            ml_weight_pct = apex.get('ml_weight', 0) * 100
+            print(f"   🤖 ML (prédiction): {ml_contrib:+.1f} ({ml_weight_pct:.0f}% poids)")
+
         # 🔥 POWER SIGNALS (si actifs)
         power_signals = analysis.get('power_signals', {})
         if power_signals.get('active', False):
@@ -799,7 +954,27 @@ class ApexAI:
         }.get(analysis['market_regime'], '⚪')
         
         print(f"\n{regime_emoji} Régime: {analysis['market_regime'].upper().replace('_', ' ')}")
-        
+
+        # 🤖 MACHINE LEARNING (si activé)
+        ml_info = analysis.get('ml', {})
+        if ml_info.get('enabled', False):
+            print(f"\n🤖 MACHINE LEARNING:")
+            prediction = ml_info.get('prediction')
+            probability = ml_info.get('probability', 0.5) * 100
+            accuracy = ml_info.get('accuracy', 0)
+            ml_score = ml_info.get('score', 0)
+
+            pred_emoji = "🟢" if prediction == 1 else "🔴"
+            pred_text = "WIN" if prediction == 1 else "LOSS"
+
+            print(f"   {pred_emoji} Prédiction: {pred_text} ({probability:.1f}% confiance)")
+            print(f"   📊 ML Score: {ml_score:+.1f}")
+            print(f"   🎯 Accuracy historique: {accuracy:.1f}%")
+
+            # Affiche les raisons ML
+            for reason in ml_info.get('reasons', []):
+                print(f"   • {reason}")
+
         # TOP RAISONS
         print(f"\n💡 TOP RAISONS:")
         

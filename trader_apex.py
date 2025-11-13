@@ -7,7 +7,7 @@ from logger_apex import get_logger
 
 class TraderApex:
     """Exécuteur d'ordres ultra-rapide - APEX"""
-    
+
     def __init__(self):
         """Initialise le trader"""
         self.logger = get_logger()
@@ -31,6 +31,9 @@ class TraderApex:
             self.wins = 0
             self.losses = 0
 
+            # 🤖 Référence à l'AI APEX (pour ML learning continu)
+            self.ai_apex = None
+
             mode = "SIMULATION" if config.DRY_RUN else "RÉEL"
             print(f"✅ Trader APEX initialisé ({mode})")
             self.logger.info(f"Trader APEX initialisé en mode {mode}")
@@ -39,13 +42,21 @@ class TraderApex:
             print(f"❌ Erreur init trader: {e}")
             self.logger.error(f"Erreur init trader: {e}")
             self.exchange = None
+
+    def set_ai(self, ai_apex):
+        """
+        🤖 Configure la référence à l'AI APEX
+        Permet le learning continu du ML
+        """
+        self.ai_apex = ai_apex
     
-    def buy(self, current_price, quantity, stop_loss, take_profit, apex_score=None):
+    def buy(self, current_price, quantity, stop_loss, take_profit, apex_score=None, ml_prediction=None):
         """
         Exécute un ordre d'ACHAT
 
         Args:
             apex_score: Score APEX à l'entrée (pour sorties dynamiques)
+            ml_prediction: Prédiction ML (0 ou 1) pour learning continu
 
         Returns:
             dict: Détails de la position
@@ -53,7 +64,7 @@ class TraderApex:
         if self.position is not None:
             print("⚠️  Position déjà ouverte")
             return None
-        
+
         try:
             # Mode simulation
             if config.DRY_RUN or self.exchange is None:
@@ -64,6 +75,7 @@ class TraderApex:
                     'take_profit': take_profit,
                     'entry_time': datetime.now(),
                     'entry_apex_score': apex_score,
+                    'ml_prediction': ml_prediction,  # 🤖 Pour learning continu
                     'targets_hit': [],
                     'mode': 'simulation'
                 }
@@ -86,7 +98,7 @@ class TraderApex:
                     config.SYMBOL,
                     quantity
                 )
-                
+
                 self.position = {
                     'entry_price': order['price'],
                     'quantity': order['amount'],
@@ -94,6 +106,7 @@ class TraderApex:
                     'take_profit': take_profit,
                     'entry_time': datetime.now(),
                     'entry_apex_score': apex_score,
+                    'ml_prediction': ml_prediction,  # 🤖 Pour learning continu
                     'order_id': order['id'],
                     'targets_hit': [],
                     'mode': 'real'
@@ -176,8 +189,12 @@ class TraderApex:
             
             # Historique
             self.positions_history.append(trade_result)
+
+            # 🤖 ML LEARNING CONTINU (après clôture du trade)
+            self._update_ml_accuracy(profit_percent > 0)
+
             self.position = None
-            
+
             return trade_result
             
         except Exception as e:
@@ -276,6 +293,47 @@ class TraderApex:
         except Exception as e:
             print(f"❌ Erreur vente partielle: {e}")
             return None
+
+    def _update_ml_accuracy(self, trade_was_profitable):
+        """
+        🤖 Met à jour l'accuracy du ML après clôture d'un trade
+        Permet au système ML d'apprendre et d'ajuster son poids dynamiquement
+
+        Args:
+            trade_was_profitable: True si profit > 0, False sinon
+        """
+        if self.ai_apex is None or not self.ai_apex.ml_enabled:
+            return  # ML pas activé
+
+        if self.position is None:
+            return  # Pas de position (déjà fermée)
+
+        ml_prediction = self.position.get('ml_prediction')
+        if ml_prediction is None:
+            return  # Aucune prédiction ML n'a été faite à l'entrée
+
+        # Détermine si la prédiction était correcte
+        # ml_prediction = 1 (WIN) → Correct si trade profitable
+        # ml_prediction = 0 (LOSS) → Correct si trade non profitable
+        prediction_correct = (ml_prediction == 1 and trade_was_profitable) or \
+                           (ml_prediction == 0 and not trade_was_profitable)
+
+        # Met à jour l'accuracy du ML
+        try:
+            self.ai_apex.ml_predictor.update_accuracy(prediction_correct)
+
+            # Log du learning
+            accuracy = self.ai_apex.ml_predictor.accuracy_rate * 100
+            weight = self.ai_apex.ml_predictor.current_weight * 100
+
+            result_emoji = "✅" if prediction_correct else "❌"
+            print(f"\n🤖 ML LEARNING:")
+            print(f"   {result_emoji} Prédiction {'correcte' if prediction_correct else 'incorrecte'}")
+            print(f"   📊 Accuracy mise à jour: {accuracy:.1f}%")
+            print(f"   ⚖️  Poids ML: {weight:.0f}%")
+
+        except Exception as e:
+            print(f"⚠️  Erreur ML learning: {e}")
 
     def check_multi_target_exit(self, current_price):
         """
