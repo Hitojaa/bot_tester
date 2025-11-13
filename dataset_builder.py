@@ -199,24 +199,28 @@ class DatasetBuilder:
         """Fetch données historiques via ccxt"""
         try:
             # ccxt limite à 1000 bougies par appel, on doit faire plusieurs appels
+            # On fetch en remontant dans le temps depuis maintenant
             all_data = []
             remaining = limit
-            last_timestamp = None
+            end_timestamp = None  # None = maintenant
 
             while remaining > 0:
                 fetch_limit = min(remaining, 1000)
 
-                # Fetch avec timestamp si on continue
-                if last_timestamp:
+                # Fetch les bougies les plus récentes disponibles
+                if end_timestamp:
+                    # Fetch les bougies juste AVANT end_timestamp (remonte dans le temps)
                     ohlcv = self.data_collector.exchange.fetch_ohlcv(
-                        symbol, timeframe, since=last_timestamp, limit=fetch_limit
+                        symbol, timeframe, limit=fetch_limit,
+                        params={'endTime': end_timestamp}
                     )
                 else:
+                    # Premier appel: récupère les 1000 dernières bougies
                     ohlcv = self.data_collector.exchange.fetch_ohlcv(
                         symbol, timeframe, limit=fetch_limit
                     )
 
-                if not ohlcv:
+                if not ohlcv or len(ohlcv) == 0:
                     break
 
                 df_chunk = pd.DataFrame(
@@ -225,17 +229,20 @@ class DatasetBuilder:
                 )
                 df_chunk['timestamp'] = pd.to_datetime(df_chunk['timestamp'], unit='ms')
 
-                all_data.append(df_chunk)
+                all_data.insert(0, df_chunk)  # Insère au début (ordre chronologique)
                 remaining -= len(df_chunk)
-                last_timestamp = int(df_chunk.iloc[-1]['timestamp'].timestamp() * 1000) + 1
 
-                print(f"   Téléchargé: {len(df_chunk)} bougies (total: {len(pd.concat(all_data))})")
+                # Prochaine itération: fetch les bougies AVANT la première du chunk actuel
+                end_timestamp = int(df_chunk.iloc[0]['timestamp'].timestamp() * 1000) - 1
+
+                print(f"   Téléchargé: {len(df_chunk)} bougies (total: {sum(len(d) for d in all_data)})")
 
                 # Pause pour rate limit
                 time.sleep(0.5)
 
-                # Si on a reçu moins que demandé, on a atteint la fin
+                # Si on a reçu moins que demandé, on a atteint le début de l'historique
                 if len(df_chunk) < fetch_limit:
+                    print(f"   ℹ️  Fin de l'historique Binance atteinte")
                     break
 
             if all_data:

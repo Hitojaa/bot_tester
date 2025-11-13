@@ -126,7 +126,7 @@ ML_REWEIGHT_THRESHOLD = 10     # Recalcule la pondération tous les 10 trades
 # ═══════════════════════════════════════════════════════════
 
 DATASET_OUTPUT_DIR = "datasets/"
-DATASET_MIN_SIZE = 10000       # Minimum 10k samples pour entraînement
+DATASET_MIN_SIZE = 500         # Minimum 500 samples (10k recommandé pour prod)
 DATASET_SPLIT_RATIO = 0.8      # 80% train / 20% test
 
 # Validation
