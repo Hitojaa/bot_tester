@@ -272,10 +272,12 @@ class DatasetBuilder:
             df_subset = df.iloc[:idx+1].copy()
 
             # S/R detection
-            sr = self.sr_detector.detect(df_subset)
+            self.sr_detector.detect_levels(df_subset)
+            current_price = df_subset.iloc[-1]['close']
+
             sr_dict = {
-                'support': sr['nearest_support'],
-                'resistance': sr['nearest_resistance']
+                'support_levels': self.sr_detector.support_levels,
+                'resistance_levels': self.sr_detector.resistance_levels
             }
 
             # Extract features
