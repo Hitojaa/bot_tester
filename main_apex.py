@@ -51,7 +51,10 @@ class ApexPredatorBot:
         self.collector = DataCollectorApex()
         self.ai = ApexAI()
         self.trader = TraderApex()
-        
+
+        # 🤖 Configure le learning continu ML
+        self.trader.set_ai(self.ai)
+
         # État
         self.running = False
         self.iteration = 0
@@ -393,8 +396,19 @@ class ApexPredatorBot:
             
             # EXÉCUTE LE TRADE !
             print(f"\n🚀 EXÉCUTION DU TRADE...")
-            position = self.trader.buy(current_price, quantity, stop_loss, take_profit, apex_score=apex_score)
-            
+
+            # 🤖 Récupère la prédiction ML pour learning continu
+            ml_prediction = None
+            if analysis.get('ml') and analysis['ml'].get('enabled'):
+                ml_prediction = analysis['ml'].get('prediction')
+                print(f"🤖 ML Prédiction: {'WIN' if ml_prediction == 1 else 'LOSS'}")
+
+            position = self.trader.buy(
+                current_price, quantity, stop_loss, take_profit,
+                apex_score=apex_score,
+                ml_prediction=ml_prediction
+            )
+
             if position:
                 self.stats['trades_executed'] += 1
                 print(f"✅ POSITION OUVERTE AVEC SUCCÈS!")
